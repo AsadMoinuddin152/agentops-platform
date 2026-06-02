@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentOps — Observability Dashboard</title>
+  <meta name="description" content="Real-time observability dashboard for your local AI agent platform — monitor routing, skill chains, latency, and tool traces." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        hsl(225, 20%, 8%);
+      --surface:   hsl(225, 18%, 12%);
+      --surface2:  hsl(225, 16%, 16%);
+      --border:    hsl(225, 14%, 22%);
+      --accent:    hsl(258, 80%, 65%);
+      --accent2:   hsl(190, 80%, 55%);
+      --accent3:   hsl(155, 70%, 50%);
+      --warning:   hsl(38,  90%, 60%);
+      --danger:    hsl(0,   75%, 60%);
+      --text:      hsl(225, 20%, 88%);
+      --text-mute: hsl(225, 12%, 52%);
+      --font:      'Inter', sans-serif;
+      --mono:      'JetBrains Mono', monospace;
+      --radius:    12px;
+      --radius-sm: 8px;
+      --shadow:    0 4px 32px hsl(225 20% 4% / 60%);
+      --glow:      0 0 32px hsl(258 80% 65% / 18%);
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ---- Header ---- */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      background: hsl(225 18% 10% / 80%);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      box-shadow: var(--glow);
+    }
+    .logo h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em; }
+    .logo span { color: var(--accent); }
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent3);
+      background: hsl(155 70% 50% / 12%);
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid hsl(155 70% 50% / 25%);
+    }
+    .live-dot {
+      width: 6px; height: 6px;
+      background: var(--accent3);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+    #refresh-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.4rem 1rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #refresh-btn:hover { background: var(--border); border-color: var(--accent); color: var(--accent); }
+
+    /* ---- Layout ---- */
+    main { padding: 2rem; max-width: 1600px; margin: 0 auto; }
+
+    /* ---- Stat Cards ---- */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      box-shadow: var(--shadow);
+      transition: transform 0.2s, border-color 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, hsl(258 80% 65% / 4%), transparent 60%);
+      pointer-events: none;
+    }
+    .stat-card:hover { transform: translateY(-2px); border-color: hsl(258 80% 65% / 40%); }
+    .stat-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-mute);
+      margin-bottom: 0.5rem;
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .stat-sub { font-size: 0.78rem; color: var(--text-mute); margin-top: 0.35rem; }
+
+    /* ---- Panels Grid ---- */
+    .panels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+    }
+    .panel-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-mute);
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .panel-title-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+    }
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* ---- Chains Table ---- */
+    .chain-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 220px; overflow-y: auto; }
+    .chain-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1rem;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      font-size: 0.82rem;
+      transition: border-color 0.15s;
+    }
+    .chain-row:hover { border-color: var(--accent); }
+    .chain-path { font-family: var(--mono); color: var(--accent2); font-size: 0.78rem; }
+    .chain-count {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: hsl(258 80% 65% / 15%);
+      color: var(--accent);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+    }
+
+    /* ---- Traces Section ---- */
+    .traces-section { margin-top: 0; }
+    .traces-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .traces-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-mute);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    #traces-search {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.4rem 0.85rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      font-family: var(--font);
+      width: 240px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #traces-search:focus { border-color: var(--accent); }
+    .traces-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .traces-table th {
+      text-align: left;
+      padding: 0.6rem 1rem;
+      background: var(--surface2);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-mute);
+      border-bottom: 1px solid var(--border);
+    }
+    .traces-table th:first-child { border-radius: var(--radius-sm) 0 0 0; }
+    .traces-table th:last-child { border-radius: 0 var(--radius-sm) 0 0; }
+    .traces-table td {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid hsl(225 14% 18%);
+      vertical-align: top;
+    }
+    .traces-table tr:last-child td { border-bottom: none; }
+    .traces-table tr:hover td { background: hsl(225 18% 14%); }
+    .trace-prompt {
+      max-width: 280px;
+      font-style: italic;
+      color: var(--text-mute);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .badge-agent { background: hsl(258 80% 65% / 15%); color: var(--accent); }
+    .badge-tool { background: hsl(190 80% 55% / 12%); color: var(--accent2); }
+    .badge-skill { background: hsl(155 70% 50% / 12%); color: var(--accent3); }
+    .badge-tool-layer { background: hsl(38 90% 60% / 12%); color: var(--warning); }
+    .latency-pill {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+    }
+    .latency-fast { background: hsl(155 70% 50% / 12%); color: var(--accent3); }
+    .latency-med  { background: hsl(38 90% 60% / 12%);  color: var(--warning); }
+    .latency-slow { background: hsl(0 75% 60% / 12%);   color: var(--danger); }
+    .tools-list { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+    /* ---- Empty State ---- */
+    .empty-state {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-mute);
+      font-size: 0.85rem;
+    }
+
+    /* ---- Scrollbars ---- */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+    /* ---- Footer ---- */
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-size: 0.75rem;
+      color: var(--text-mute);
+      border-top: 1px solid var(--border);
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <h1>Agent<span>Ops</span> — Observability</h1>
+  </div>
+  <div class="header-meta">
+    <div class="live-badge"><div class="live-dot"></div> Live</div>
+    <button id="refresh-btn" onclick="loadAll()">↺ Refresh</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- STAT CARDS -->
+  <div class="stat-grid" id="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Runs</div>
+      <div class="stat-value" id="s-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Latency</div>
+      <div class="stat-value" id="s-avg-lat">—</div>
+      <div class="stat-sub">orchestration</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">P95 Latency</div>
+      <div class="stat-value" id="s-p95">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">LLM Calls</div>
+      <div class="stat-value" id="s-llm">—</div>
+      <div class="stat-sub" id="s-llm-sub">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">RAG Queries</div>
+      <div class="stat-value" id="s-rag">—</div>
+      <div class="stat-sub" id="s-rag-sub">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Token Speed</div>
+      <div class="stat-value" id="s-tps">—</div>
+      <div class="stat-sub">tokens / sec</div>
+    </div>
+  </div>
+
+  <!-- CHARTS: Agent + Skill -->
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="panel-title">
+        <div class="panel-title-dot" style="background:var(--accent)"></div>
+        Agent Routing Distribution
+      </div>
+      <div class="chart-wrap"><canvas id="agent-chart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">
+        <div class="panel-title-dot" style="background:var(--accent2)"></div>
+        Skill Ecosystem Usage
+      </div>
+      <div class="chart-wrap"><canvas id="skill-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Skill Chains -->
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="panel-title">
+        <div class="panel-title-dot" style="background:var(--accent3)"></div>
+        Workflow Paths (Skill Chains)
+      </div>
+      <div class="chain-list" id="chain-list">
+        <div class="empty-state">Loading chains...</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">
+        <div class="panel-title-dot" style="background:var(--warning)"></div>
+        LLM Model Performance
+      </div>
+      <div class="chart-wrap"><canvas id="latency-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- TRACES TABLE -->
+  <div class="panel traces-section">
+    <div class="traces-header">
+      <div class="traces-title">
+        <div class="panel-title-dot" style="background:var(--accent)"></div>
+        Active Trace Log (Recent 50)
+      </div>
+      <input type="text" id="traces-search" placeholder="Filter traces..." oninput="filterTraces()" />
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="traces-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Prompt</th>
+            <th>Agent</th>
+            <th>Skill</th>
+            <th>Tools Used</th>
+            <th>Latency</th>
+          </tr>
+        </thead>
+        <tbody id="traces-body">
+          <tr><td colspan="6" class="empty-state">Loading traces...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<footer>AgentOps Observability Dashboard — Phase 4 · Powered by FastAPI + JSONL Telemetry</footer>
+
+<script>
+  const BASE = '';
+  let rawTraces = [];
+  let agentChartInst = null;
+  let skillChartInst = null;
+  let latencyChartInst = null;
+
+  const PALETTE = [
+    'hsl(258,70%,65%)', 'hsl(190,75%,55%)', 'hsl(155,65%,50%)',
+    'hsl(38,85%,60%)', 'hsl(0,70%,60%)', 'hsl(280,60%,60%)',
+    'hsl(210,70%,60%)', 'hsl(330,65%,60%)'
+  ];
+
+  async function fetchJson(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${url} → ${r.status}`);
+    return r.json();
+  }
+
+  function formatMs(ms) {
+    if (ms == null) return '—';
+    if (ms < 1000) return `${ms.toFixed(0)} ms`;
+    return `${(ms / 1000).toFixed(1)} s`;
+  }
+
+  function latencyClass(ms) {
+    if (ms < 2000) return 'latency-fast';
+    if (ms < 15000) return 'latency-med';
+    return 'latency-slow';
+  }
+
+  function agentBadgeClass(agent) {
+    if (!agent) return 'badge-agent';
+    if (agent === 'tool_layer') return 'badge-tool-layer';
+    return 'badge-agent';
+  }
+
+  // ---- Stats ----
+  async function loadStats() {
+    try {
+      const d = await fetchJson(`${BASE}/api/observability/stats`);
+      document.getElementById('s-total').textContent = d.total_runs.toLocaleString();
+      document.getElementById('s-avg-lat').textContent = formatMs(d.avg_orchestration_latency_ms);
+      document.getElementById('s-p95').textContent = formatMs(d.p95_orchestration_latency_ms);
+      document.getElementById('s-llm').textContent = d.llm_stats.total_calls.toLocaleString();
+      document.getElementById('s-llm-sub').textContent = `avg ${formatMs(d.llm_stats.avg_latency_ms)}`;
+      document.getElementById('s-rag').textContent = d.rag_stats.total_queries.toLocaleString();
+      document.getElementById('s-rag-sub').textContent = `avg ${formatMs(d.rag_stats.avg_retrieval_ms)} · ${d.rag_stats.avg_hits} hits`;
+      document.getElementById('s-tps').textContent = d.llm_stats.avg_tokens_per_sec.toFixed(1);
+    } catch(e) { console.warn('Stats load error', e); }
+  }
+
+  // ---- Agent Chart ----
+  async function loadAgentChart() {
+    try {
+      const d = await fetchJson(`${BASE}/api/observability/agents`);
+      const labels = Object.keys(d);
+      const values = Object.values(d);
+      const ctx = document.getElementById('agent-chart').getContext('2d');
+      if (agentChartInst) agentChartInst.destroy();
+      agentChartInst = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{ data: values, backgroundColor: PALETTE, borderColor: 'hsl(225,20%,12%)', borderWidth: 3, hoverOffset: 8 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: 'hsl(225,20%,80%)', font: { family: 'Inter', size: 12 }, padding: 16, boxWidth: 12 } }
+          }
+        }
+      });
+    } catch(e) { console.warn('Agent chart error', e); }
+  }
+
+  // ---- Skill Chart ----
+  async function loadSkillChart() {
+    try {
+      const d = await fetchJson(`${BASE}/api/observability/skills`);
+      const sorted = Object.entries(d).sort((a,b) => b[1]-a[1]);
+      const labels = sorted.map(([k]) => k);
+      const values = sorted.map(([,v]) => v);
+      const ctx = document.getElementById('skill-chart').getContext('2d');
+      if (skillChartInst) skillChartInst.destroy();
+      skillChartInst = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Executions',
+            data: values,
+            backgroundColor: labels.map((_, i) => PALETTE[i % PALETTE.length] + '99'),
+            borderColor: labels.map((_, i) => PALETTE[i % PALETTE.length]),
+            borderWidth: 2, borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: 'hsl(225,12%,55%)', font: { family: 'Inter', size: 11 } }, grid: { color: 'hsl(225,14%,18%)' } },
+            y: { ticks: { color: 'hsl(225,20%,78%)', font: { family: 'JetBrains Mono', size: 11 } }, grid: { display: false } }
+          }
+        }
+      });
+    } catch(e) { console.warn('Skill chart error', e); }
+  }
+
+  // ---- Chains ----
+  async function loadChains() {
+    try {
+      const d = await fetchJson(`${BASE}/api/observability/chains`);
+      const sorted = Object.entries(d).sort((a,b) => b[1]-a[1]);
+      const el = document.getElementById('chain-list');
+      if (!sorted.length) { el.innerHTML = '<div class="empty-state">No skill chains recorded yet.</div>'; return; }
+      el.innerHTML = sorted.map(([path, count]) => `
+        <div class="chain-row">
+          <span class="chain-path">${path}</span>
+          <span class="chain-count">${count}×</span>
+        </div>`).join('');
+    } catch(e) { console.warn('Chain error', e); }
+  }
+
+  // ---- Latency Chart (from stats) ----
+  async function loadLatencyChart() {
+    try {
+      const d = await fetchJson(`${BASE}/api/observability/stats`);
+      const labels = ['Avg Orchestration', 'P95 Orchestration', 'Avg LLM', 'Avg RAG'];
+      const values = [
+        d.avg_orchestration_latency_ms,
+        d.p95_orchestration_latency_ms,
+        d.llm_stats.avg_latency_ms,
+        d.rag_stats.avg_retrieval_ms
+      ];
+      const ctx = document.getElementById('latency-chart').getContext('2d');
+      if (latencyChartInst) latencyChartInst.destroy();
+      latencyChartInst = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Latency (ms)',
+            data: values,
+            backgroundColor: ['hsl(258,70%,65%,0.6)','hsl(0,70%,60%,0.6)','hsl(190,75%,55%,0.6)','hsl(155,65%,50%,0.6)'],
+            borderColor:      ['hsl(258,70%,65%)','hsl(0,70%,60%)','hsl(190,75%,55%)','hsl(155,65%,50%)'],
+            borderWidth: 2, borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: 'hsl(225,12%,55%)', font: { family: 'Inter', size: 10 } }, grid: { display: false } },
+            y: { ticks: { color: 'hsl(225,12%,55%)', font: { family: 'Inter', size: 11 }, callback: v => `${v} ms` }, grid: { color: 'hsl(225,14%,18%)' } }
+          }
+        }
+      });
+    } catch(e) { console.warn('Latency chart error', e); }
+  }
+
+  // ---- Traces ----
+  async function loadTraces() {
+    try {
+      rawTraces = await fetchJson(`${BASE}/api/observability/traces`);
+      renderTraces(rawTraces);
+    } catch(e) { console.warn('Traces error', e); }
+  }
+
+  function renderTraces(traces) {
+    const tbody = document.getElementById('traces-body');
+    if (!traces.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No traces yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = traces.map(t => {
+      const ts = t.timestamp ? t.timestamp.split('.')[0] : '—';
+      const agent = t.selected_agent || '—';
+      const skill = t.selected_skill || '—';
+      const tools = (t.tools_used || []).filter(Boolean);
+      const lat = t.latency_ms ?? null;
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:0.72rem;color:var(--text-mute)">${ts}</td>
+        <td class="trace-prompt" title="${(t.prompt || '').replace(/"/g, '&quot;')}">"${t.prompt || ''}"</td>
+        <td><span class="badge ${agentBadgeClass(agent)}">${agent}</span></td>
+        <td>${skill !== '—' ? `<span class="badge badge-skill">${skill}</span>` : '<span style="color:var(--text-mute)">—</span>'}</td>
+        <td><div class="tools-list">${tools.slice(0, 5).map(tool => `<span class="badge badge-tool" style="font-size:0.66rem">${tool}</span>`).join('')}${tools.length > 5 ? `<span style="color:var(--text-mute);font-size:0.7rem">+${tools.length - 5}</span>` : ''}</div></td>
+        <td><span class="latency-pill ${latencyClass(lat)}">${formatMs(lat)}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function filterTraces() {
+    const q = document.getElementById('traces-search').value.toLowerCase();
+    if (!q) { renderTraces(rawTraces); return; }
+    const filtered = rawTraces.filter(t =>
+      (t.prompt || '').toLowerCase().includes(q) ||
+      (t.selected_agent || '').toLowerCase().includes(q) ||
+      (t.selected_skill || '').toLowerCase().includes(q) ||
+      (t.tools_used || []).some(tool => tool.toLowerCase().includes(q))
+    );
+    renderTraces(filtered);
+  }
+
+  async function loadAll() {
+    await Promise.all([
+      loadStats(),
+      loadAgentChart(),
+      loadSkillChart(),
+      loadChains(),
+      loadLatencyChart(),
+      loadTraces()
+    ]);
+  }
+
+  // Initial load + auto-refresh every 30s
+  loadAll();
+  setInterval(loadAll, 30000);
+</script>
+</body>
+</html>
